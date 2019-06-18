@@ -96,13 +96,11 @@ orthomap <- function(
     centre <- c(mean(na.omit(world$y)), mean(na.omit(world$x)))
   }
 
-
   globe.col <- globe
-
 
   ### Get World country polygons coordinates (and labels)
 
-  xy <- maps:::map.poly(
+  xy_world <- maps:::map.poly(
     database   = "world",
     regions    = ".",
     exact      = FALSE,
@@ -113,8 +111,23 @@ orthomap <- function(
     fill       = TRUE,
     as.polygon = TRUE
   )
-  coord <- cbind(xy$x, xy$y)
-
+  coord_world <- cbind(xy_world$x, xy_world$y, 0)
+  
+  xy_region <- maps:::map.poly(
+    database   = "world",
+    regions    = query,
+    exact      = FALSE,
+    xlim       = NULL,
+    ylim       = NULL,
+    boundary   = TRUE,
+    interior   = TRUE,
+    fill       = TRUE,
+    as.polygon = TRUE
+  )
+  coord_region <- cbind(xy_region$x, xy_region$y, 1)
+  
+  xy <- rbind(xy_world, xy_region)
+  coord <- rbind(coord_world, coord_region)
 
   ### Project coordinates in orthographic
 
@@ -128,7 +141,7 @@ orthomap <- function(
   y     <- cos(cenlat) * sin(lat) - sin(cenlat) * cos(lat) * cos(long - cenlong)
   front <- sin(cenlat) * sin(lat) + cos(cenlat) * cos(lat) * cos(long-cenlong) > 0
 
-  coord <- cbind(coord, x, y, front)
+  coord <- cbind(coord[,1], coord[,2], x, y, front, coord[,3])
 
 
   ### Find polygons delimitation
@@ -190,7 +203,7 @@ orthomap <- function(
     ),
     data = country
   )
-
+  
 
   ### Create globe limits
 
@@ -249,7 +262,7 @@ orthomap <- function(
   options(warn = -1)
   maps::map("world", proj = "orthographic", orient = c(centre, 0), col = NA)
   options(warn = ooo)
-
+  
   sp::plot(
     globe,
     col    = globe.col,
