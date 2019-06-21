@@ -7,6 +7,7 @@
 #' \code{sp:SpatialPolygons} format.
 #'
 #' @param query The name of a country to center the map on.
+#' @param query.color The color of the country to highlight.
 #' @param centre Latitude and longitude of the map center. Ignored if query is not \code{NULL}.
 #' @param border.color Color of polygons border.
 #' @param border.type Type of polygons border line (see argument \code{lty}).
@@ -61,10 +62,90 @@
 #'   bg           = "#dddddd"
 #')
 
+getPolygonDataFrame <- function(coord, xy, centre) {
+  
+  ### Project coordinates in orthographic
+  
+  d2r     <- pi / 180
+  lat     <- coord[ , 2L] * d2r
+  long    <- coord[ , 1L] * d2r
+  cenlat  <- centre[1L] * d2r
+  cenlong <- centre[2L] * d2r
+  
+  x     <- cos(lat) * sin(long - cenlong)
+  y     <- cos(cenlat) * sin(lat) - sin(cenlat) * cos(lat) * cos(long - cenlong)
+  front <- sin(cenlat) * sin(lat) + cos(cenlat) * cos(lat) * cos(long-cenlong) > 0
+  
+  coord <- cbind(coord[,1], coord[,2], x, y, front)
+  
+  
+  ### Find polygons delimitation
+  
+  naloc <- (1L:nrow(coord))[!complete.cases(coord)]
+  naloc <- c(0, naloc, nrow(coord) + 1)
+  
+  
+  ### Convert Matrix into SpatialPolygons
+  
+  polylist <- list()
+  
+  for (i in 2:length(naloc)) {
+    
+    thispoly <- coord[(naloc[i - 1] + 1):(naloc[i] - 1), 3L:5L, drop = FALSE]
+    thispoly <- rbind(thispoly, thispoly[1L, ])
+    unq      <- unique(thispoly[ , 3L])
+    
+    if (length(unq) == 1){
+      
+      if (unq == 1) { # Polygon is fully on front side
+        
+        polylist[[i - 1]] <- sp::Polygons(list(sp::Polygon(thispoly[ , 1L:2L])), as.character(i - 2))
+      }
+      
+    } else { # Polygon is on front and back sides
+      
+      ind <- thispoly[ , 3L] == 0
+      
+      # Project points "outside" the globe
+      
+      temdist <- pmax(sqrt(rowSums(as.matrix(thispoly[ind, 1L:2L]^2))), 0.00001)
+      thispoly[ind, 1L:2L] <- thispoly[ind, 1L:2L] * (2 - temdist) / temdist
+      
+      polylist[[i - 1]] <- sp::Polygons(list(sp::Polygon(thispoly[ , 1L:2L])), as.character(i - 2))
+    }
+  }
+  
+  
+  ### Delete outside polygons
+  
+  pos <- which(unlist(lapply(polylist, function(x) ifelse(is.null(x), 0, 1))) == 1)
+  
+  polylist <- polylist[pos]
+  country  <- data.frame(
+    country   = xy[[4L]][pos],
+    row.names = unlist(
+      lapply(
+        polylist,
+        function(x) x@ID
+      )
+    )
+  )
+  
+  world <- sp::SpatialPolygonsDataFrame(
+    Sr   = sp::SpatialPolygons(
+      Srl         = polylist,
+      proj4string = sp::CRS(paste0("+proj=ortho +lat_0=", centre[1L], " +lon_0=", centre[2L]))
+    ),
+    data = country
+  ) 
+  
+  return (world)
+}
 
 
 orthomap <- function(
   query        = NULL,
+  query.color  = "#FF0000",
   centre       = c(0, 0),
   border.color = NA,
   border.type  = 1,
@@ -111,9 +192,9 @@ orthomap <- function(
     fill       = TRUE,
     as.polygon = TRUE
   )
-  coord_world <- cbind(xy_world$x, xy_world$y, 0)
+  coord_world <- cbind(xy_world$x, xy_world$y)
   
-  xy_region <- maps:::map.poly(
+  xy_country <- maps:::map.poly(
     database   = "world",
     regions    = query,
     exact      = FALSE,
@@ -124,85 +205,13 @@ orthomap <- function(
     fill       = TRUE,
     as.polygon = TRUE
   )
-  coord_region <- cbind(xy_region$x, xy_region$y, 1)
+  coord_country <- cbind(xy_country$x, xy_country$y)
   
-  xy <- rbind(xy_world, xy_region)
-  coord <- rbind(coord_world, coord_region)
 
-  ### Project coordinates in orthographic
-
-  d2r     <- pi / 180
-  lat     <- coord[ , 2L] * d2r
-  long    <- coord[ , 1L] * d2r
-  cenlat  <- centre[1L] * d2r
-  cenlong <- centre[2L] * d2r
-
-  x     <- cos(lat) * sin(long - cenlong)
-  y     <- cos(cenlat) * sin(lat) - sin(cenlat) * cos(lat) * cos(long - cenlong)
-  front <- sin(cenlat) * sin(lat) + cos(cenlat) * cos(lat) * cos(long-cenlong) > 0
-
-  coord <- cbind(coord[,1], coord[,2], x, y, front, coord[,3])
-
-
-  ### Find polygons delimitation
-
-  naloc <- (1L:nrow(coord))[!complete.cases(coord)]
-  naloc <- c(0, naloc, nrow(coord) + 1)
-
-
-  ### Convert Matrix into SpatialPolygons
-
-  polylist <- list()
-
-  for (i in 2:length(naloc)) {
-
-    thispoly <- coord[(naloc[i - 1] + 1):(naloc[i] - 1), 3L:5L, drop = FALSE]
-    thispoly <- rbind(thispoly, thispoly[1L, ])
-    unq      <- unique(thispoly[ , 3L])
-
-    if (length(unq) == 1){
-
-      if (unq == 1) { # Polygon is fully on front side
-
-        polylist[[i - 1]] <- sp::Polygons(list(sp::Polygon(thispoly[ , 1L:2L])), as.character(i - 2))
-      }
-
-    } else { # Polygon is on front and back sides
-
-      ind <- thispoly[ , 3L] == 0
-
-      # Project points "outside" the globe
-
-      temdist <- pmax(sqrt(rowSums(as.matrix(thispoly[ind, 1L:2L]^2))), 0.00001)
-      thispoly[ind, 1L:2L] <- thispoly[ind, 1L:2L] * (2 - temdist) / temdist
-
-      polylist[[i - 1]] <- sp::Polygons(list(sp::Polygon(thispoly[ , 1L:2L])), as.character(i - 2))
-    }
-  }
-
-
-  ### Delete outside polygons
-
-  pos <- which(unlist(lapply(polylist, function(x) ifelse(is.null(x), 0, 1))) == 1)
-
-  polylist <- polylist[pos]
-  country  <- data.frame(
-    country   = xy[[4L]][pos],
-    row.names = unlist(
-      lapply(
-        polylist,
-        function(x) x@ID
-      )
-    )
-  )
-
-  world <- sp::SpatialPolygonsDataFrame(
-    Sr   = sp::SpatialPolygons(
-      Srl         = polylist,
-      proj4string = sp::CRS(paste0("+proj=ortho +lat_0=", centre[1L], " +lon_0=", centre[2L]))
-    ),
-    data = country
-  )
+  ### Project coordinates and get spacial polygons for world and country
+  
+  world <- getPolygonDataFrame(coord_world, xy_world, centre)
+  country <- getPolygonDataFrame(coord_country, xy_country, centre)
   
 
   ### Create globe limits
@@ -234,6 +243,12 @@ orthomap <- function(
     byid   = TRUE,
     width  = 0
   )
+  
+  country <- rgeos::gBuffer( # To correct a bug in gIntersection
+    spgeom = country,
+    byid   = TRUE,
+    width  = 0
+  )
 
   globe <- rgeos::gBuffer( # To correct a bug in gIntersection
     spgeom = globe,
@@ -251,6 +266,18 @@ orthomap <- function(
   world <- sp::spChFIDs(
     obj = world,
     x   = as.character(1L:length(world))
+  )
+  
+  country <- rgeos::gIntersection(
+    spgeom1       = country,
+    spgeom2       = globe,
+    byid          = TRUE,
+    drop_lower_td = TRUE
+  )
+  
+  country <- sp::spChFIDs(
+    obj = country,
+    x   = as.character(1L:length(country))
   )
 
 
@@ -281,6 +308,18 @@ orthomap <- function(
     add    = TRUE
   )
 
+  # If queried a country, highlight country in different color  
+  if (!is.null(query)) {
+    sp::plot(
+      country,
+      col    = query.color,
+      border = border.color,
+      lty    = border.type,
+      lwd    = border.size,
+      add    = TRUE
+    )
+  }
+
   if (grid) {
 
     sp::plot(
@@ -304,3 +343,7 @@ orthomap <- function(
 
   invisible(world)
 }
+
+
+
+

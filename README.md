@@ -1,7 +1,17 @@
 orthomap <img src="inst/img/orthomap-sticker.png" height="120" align="right"/>
 =========================================================
 
-[![Build Status](https://travis-ci.org/ahasverus/orthomap.svg?branch=master)](https://travis-ci.org/ahasverus/orthomap) [![](https://img.shields.io/badge/licence-GPLv3-8f10cb.svg)](http://www.gnu.org/licenses/gpl.html)
+[![Build Status](https://travis-ci.org/bsgerber/orthomap.svg?branch=master)](https://travis-ci.org/bsgerber/orthomap) [![](https://img.shields.io/badge/licence-GPLv3-8f10cb.svg)](http://www.gnu.org/licenses/gpl.html)
+
+Fork Notes
+--------
+
+This fork is purely experimental (with gratitude and credit to Nicolas Casajus). With this fork, calls to orthomap allow for highlighting of specific countries with a specific color. For example:
+
+```r
+### Center World map based on country name and color the country in red
+world <- orthomap(query = "Nigeria", query.color = "#FF0000")
+```
 
 Overview
 --------
@@ -27,7 +37,7 @@ Then install the **orthomap** package:
 
 ```r
 ### Install the < orthomap > package from GitHub
-devtools::install_github("ahasverus/orthomap")
+devtools::install_github("bsgerber/orthomap")
 
 ### Load the < orthomap > package
 library(orthomap)
